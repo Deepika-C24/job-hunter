@@ -1,21 +1,24 @@
-import Anthropic from "@anthropic-ai/sdk";
+import Groq from "groq-sdk";
 import { NextRequest, NextResponse } from "next/server";
 
-const client = new Anthropic();
+const client = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 export async function POST(req: NextRequest) {
   try {
     const { profile } = await req.json();
 
-    const message = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+    const message = await client.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
       max_tokens: 1024,
-      system: `You are a job market research agent with web search access. Find real, current job postings.
+      messages: [
+        {
+          role: "system",
+          content: `You are a job market expert. Based on a candidate profile, generate realistic relevant job postings.
 Return ONLY a valid JSON array with no markdown, no backticks, no explanation:
 [
   {
     "title": "Job Title",
-    "company": "Company Name",
+    "company": "Real Company Name",
     "location": "City, State or Remote",
     "match": 85,
     "tags": ["React", "TypeScript"],
@@ -24,26 +27,22 @@ Return ONLY a valid JSON array with no markdown, no backticks, no explanation:
     "posted": "2 days ago"
   }
 ]
-Find 5 diverse, real positions. Match score 0-100 based on actual skill overlap.`,
-      messages: [{
-        role: "user",
-        content: `Find current job postings for this candidate:
+Generate 5 realistic positions at real companies. Match score 0-100 based on skill overlap.`,
+        },
+        {
+          role: "user",
+          content: `Generate job postings for this candidate:
 Name: ${profile.name}
 Target Title: ${profile.title}
 Skills: ${profile.skills?.join(", ")}
 Experience: ${profile.experience_years} years
 Industries: ${profile.industries?.join(", ")}
-
-Search using these queries: ${profile.search_queries?.join("; ")}`,
-      }],
-      tools: [{ type: "web_search_20250305" as const, name: "web_search" }],
+Search queries to inspire results: ${profile.search_queries?.join("; ")}`,
+        },
+      ],
     });
 
-    const raw = message.content
-      .filter((b) => b.type === "text")
-      .map((b) => (b as { type: "text"; text: string }).text)
-      .join("");
-
+    const raw = message.choices[0]?.message?.content || "";
     const clean = raw.replace(/```json|```/g, "").trim();
     const jobs = JSON.parse(clean);
 
@@ -52,9 +51,9 @@ Search using these queries: ${profile.search_queries?.join("; ")}`,
       jobs: Array.isArray(jobs) ? jobs : [],
     });
   } catch (err) {
-    console.error(err);
+    console.error("❌ Find jobs error:", err);
     return NextResponse.json(
-      { success: false, error: "Job search failed" },
+      { success: false, error: err instanceof Error ? err.message : "Job search failed" },
       { status: 500 }
     );
   }

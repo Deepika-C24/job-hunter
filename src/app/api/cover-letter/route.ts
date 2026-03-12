@@ -1,27 +1,30 @@
-import Anthropic from "@anthropic-ai/sdk";
+import Groq from "groq-sdk";
 import { NextRequest, NextResponse } from "next/server";
 
-const client = new Anthropic();
+const client = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 export async function POST(req: NextRequest) {
   try {
     const { profile, job } = await req.json();
 
-    const message = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+    const message = await client.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
       max_tokens: 1024,
-      system: `You are an expert cover letter writer. Write compelling, personalized cover letters that get interviews.
-Style rules:
+      messages: [
+        {
+          role: "system",
+          content: `You are an expert cover letter writer. Write compelling, personalized cover letters that get interviews.
+Rules:
 - Professional but warm and human
 - DO NOT start with "I am writing to apply for..."
-- DO NOT use placeholder brackets like [Your Name] — use the actual candidate details provided
+- DO NOT use placeholder brackets — use actual candidate details
 - Reference specific achievements from the resume
-- Connect the candidate's background directly to the specific role
 - 3-4 tight paragraphs, no fluff
 - End with the candidate's actual name as signature`,
-      messages: [{
-        role: "user",
-        content: `Write a cover letter for this candidate applying to this job.
+        },
+        {
+          role: "user",
+          content: `Write a cover letter for this candidate:
 
 CANDIDATE:
 Name: ${profile.name}
@@ -38,20 +41,17 @@ Key requirements: ${job.tags?.join(", ")}
 Description: ${job.snippet}
 Why they match: ${job.why_match}
 
-Write the complete, ready-to-send cover letter now.`,
-      }],
+Write the complete cover letter now.`,
+        },
+      ],
     });
 
-    const letter = message.content
-      .filter((b) => b.type === "text")
-      .map((b) => (b as { type: "text"; text: string }).text)
-      .join("");
-
+    const letter = message.choices[0]?.message?.content || "";
     return NextResponse.json({ success: true, letter });
   } catch (err) {
-    console.error(err);
+    console.error("❌ Cover letter error:", err);
     return NextResponse.json(
-      { success: false, error: "Cover letter generation failed" },
+      { success: false, error: err instanceof Error ? err.message : "Cover letter generation failed" },
       { status: 500 }
     );
   }
